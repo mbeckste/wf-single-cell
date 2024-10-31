@@ -10,7 +10,7 @@
         "fastq": "s3://workflow-exampledata/epi2me-ont-single-cell/chr17.fq.gz",
 	"kit": "3prime:v3",
 	"ref_genome_dir": "s3://workflow-exampledata/epi2me-ont-single-cell",
-	"genes_of_interest": "s3://workflow-exampledata/epi2me-ont-single-cell/umap_plot_genes.csv",
+	"genes_of_interest": "s3://workflow-exampledata/epi2me-ont-single-cell/umap_plot_genes.csv"
     },
     "dois": [
 	"10.1038/s41587-020-0439-x"
