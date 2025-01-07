@@ -155,8 +155,8 @@ def umap_plots(umaps_dirs, genes_file):
 
             repl_tabs = Tabs()
 
-            gene_umap_files = sample_dir.glob('gene.expression.umap*.tsv')
-            transcript_umap_files = sample_dir.glob('transcript.expression.umap*.tsv')
+            gene_umap_files = sample_dir.glob('*gene_expression_umap*.tsv')
+            transcript_umap_files = sample_dir.glob('*transcript_expression_umap*.tsv')
 
             for i, (
                 gene_umap_file, transcript_umap_file
@@ -284,9 +284,13 @@ def main(args):
              and the number of cells, genes and transcripts identified within
              each sample."""
         )
+        reads_col = 'reads'
+        if args.q_filtered:
+            reads_col = 'reads(after quality filter)'
+
         table = DataTable(
             headers=[
-                'sample ID', 'reads', 'cells', 'genes', 'transcripts'])
+                'sample ID', reads_col, 'cells', 'genes', 'transcripts'])
         for name, grp in survival_df.groupby('sample_id'):
             table.add_row(
                 title=name,
@@ -493,4 +497,7 @@ def argparser():
     parser.add_argument(
         "--visium_spatial_coords", default=False, type=Path,
         help='')
+    parser.add_argument(
+        "--q_filtered", action='store_true',
+        help="True if the input reads were subject to min read quality filtering.")
     return parser

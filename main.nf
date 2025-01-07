@@ -38,6 +38,7 @@ process getVersions {
 process getParams {
     label "singlecell"
     cpus 1
+    cache false
     memory "1 GB"
     output:
         path "params.json"
@@ -74,6 +75,7 @@ process makeReport {
         String report_name = "wf-single-cell-report.html"
         String metadata = new JsonBuilder(metadata).toPrettyString()
         def visium_opt = visium_coords.fileName.name != OPTIONAL_FILE.name ? '--visium_spatial_coords ' + visium_coords : ""
+        String q_filtered = params.min_read_qual ? "--q_filtered": ""
     """
     echo '${metadata}' > metadata.json
     workflow-glue report \
@@ -89,6 +91,7 @@ process makeReport {
         --wf_version $wf_version \
         --metadata metadata.json \
         --bam_stats bam_stats.tsv \
+        $q_filtered \
         $visium_opt
     """
 }
@@ -114,6 +117,10 @@ process parse_kit_metadata {
             --output merged.csv
         """
     }else{
+        // A visium barcode is a tissue coordinate not a cell, so we don't need expected cells.
+        if (params.kit.split(':')[0] != "visium" & params.expected_cells == null ){
+            throw new Exception("expected_cells should be provided for 10x kits other than Visium")
+        }
         """
         workflow-glue parse_kit_metadata from_cli \
             --kit_config kit_config.csv \
@@ -158,8 +165,8 @@ process prepare_report_data {
     echo \$expression_dir
     workflow-glue prepare_report_data \
         "${meta.alias}" adapter_stats bamstats expression_stats \
-        white_list.txt survival.tsv bam_stats.tsv raw_gene_expression genes_of_interest.tsv
-
+        white_list.txt survival.tsv bam_stats.tsv raw_gene_expression \
+        genes_of_interest.tsv ${meta.n_seqs}
 
     if [ "$opt_umap" = true ]; then
         echo "Adding umap data to sample directory"
@@ -283,6 +290,11 @@ workflow {
         kit_configs_file = file("${projectDir}/kit_configs.csv", checkIfExists: true)
     }
 
+    ArrayList fastcat_extra_args = []
+    if (params.min_read_qual) {
+        fastcat_extra_args << "-q $params.min_read_qual"
+    }
+
     if (params.fastq) {
         samples = fastq_ingress([
                 "input":params.fastq,
@@ -290,7 +302,8 @@ workflow {
                 "sample_sheet":params.sample_sheet,
                 "fastq_chunk": params.fastq_chunk,
                 "stats": true,
-                "per_read_stats": false])
+                "per_read_stats": false,
+                "fastcat_extra_args": fastcat_extra_args.join(" ")])
     } else {
         samples = xam_ingress([
                 "input":params.bam,
@@ -300,9 +313,11 @@ workflow {
                 "keep_unaligned": true,
                 "return_fastq": true,
                 "stats": true,
-                "per_read_stats": false])
+                "per_read_stats": false,
+                "fastcat_extra_args": fastcat_extra_args.join(" ")])
 
     }
+
     if (!params.single_cell_sample_sheet) {
         sc_sample_sheet = file("$projectDir/data/OPTIONAL_FILE")
     } else {

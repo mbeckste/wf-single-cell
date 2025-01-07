@@ -1,5 +1,6 @@
 import java.util.ArrayList;
 
+include { merge_and_publish_tsv } from '../modules/local/common'
 
 process split_gtf_by_chroms {
     label "singlecell"
@@ -19,32 +20,34 @@ process generate_whitelist{
     label "singlecell"
     cpus 4
     memory "4 GB"
-    publishDir "${params.out_dir}/${meta.alias}", mode: 'copy'
+    publishDir "${params.out_dir}/${meta.alias}", 
+                mode: 'copy', 
+                pattern: "*whitelist.tsv"
     input:
         tuple val(meta),
               path("barcodes/?_barcode.tsv")
     output:
         tuple val(meta),
-              path("whitelist.tsv"),
+              path("${meta.alias}.whitelist.tsv"),
               emit: whitelist
         tuple val(meta),
               path("kneeplot.png"),
               emit: kneeplot
-        // Note: This is called "uncorrected", but they're actually counts of
-        //       high quality exact matches to longlist. Low frequency barcodes
-        //       are assumed to be false positives. The list is further
-        //       filtered by the selected method (basically by abundance).
+        tuple val(meta),
+              path("shortlist_summary.tsv"),
+              emit: shortlist_summary
     // TODO: change this to take precomputed, filtered counts from extract_barcodes
     script:
     // It doesn't make sense to do cell count thresholding of the shortlist for visium data.
     // A visium barcode is a tissue coordinate not a cell.
     def no_thresholding_opt = meta.kit.split(':')[0] == 'visium' ? '--no_cell_filter' : ""
+    def exp_cells_opt = meta.kit.split(':')[0] != 'visium' ? "--exp_cells ${meta['expected_cells']}" : ""
     """
     workflow-glue create_shortlist \
-        barcodes whitelist.tsv \
+        barcodes "${meta.alias}.whitelist.tsv" shortlist_summary.tsv   \
         --counts \
         --method quantile \
-        --exp_cells ${meta['expected_cells']} \
+        ${exp_cells_opt} \
         --plot "kneeplot.png" \
         --counts_out "high_qual_bc_counts.tsv" \
         --threads ${task.cpus} \
@@ -68,10 +71,14 @@ process assign_barcodes{
         tuple val(meta),
               path("extract_barcodes_with_bc.tsv"),
               emit: tags
+        tuple val(meta),
+              path("summary.tsv"),
+              emit: summary
+    script:
     """
     workflow-glue assign_barcodes \
         whitelist.tsv extract_barcodes.tsv \
-        extract_barcodes_with_bc.tsv bc_assign_counts.tsv \
+        extract_barcodes_with_bc.tsv bc_assign_counts.tsv summary.tsv \
         --max_ed ${params.barcode_max_ed} \
         --min_ed_diff ${params.barcode_min_ed_diff} \
         --use_kmer_index
@@ -113,6 +120,7 @@ process cat_tags_by_chrom {
               path("chr_tags/*"),
               emit: merged_tags
 
+    script:
     """
     mkdir chr_tags
     # Find the chr column number
@@ -132,9 +140,9 @@ process stringtie {
     label "singlecell"
     cpus params.threads
     // Memory usage for this process is usually less than 3GB, but some cases it may go over this.
-    memory = { 3.GB * task.attempt }
-    maxRetries = 3
-    errorStrategy = { task.exitStatus in 137..140 ? 'retry' : 'terminate' }
+    memory { 3.GB * task.attempt } 
+    maxRetries 3
+    errorStrategy { task.exitStatus in 137..140 ? 'retry' : 'terminate' }
     input:
         path 'ref_genome.fa'
         path 'ref_genome.fa.fai'
@@ -171,7 +179,7 @@ process stringtie {
 process align_to_transcriptome {
     label "singlecell"
     cpus params.threads
-    memory = "32 GB"
+    memory "31 GB"
     input:
         tuple val(meta),
               val(chr),
@@ -223,6 +231,7 @@ process assign_features {
         tuple val(meta),
               path("gffcompare.annotated.gtf"),
               emit: annotation
+    script:
     """
     # gffcomapre maps transcript reference IDs to query transcripts.
     gffcompare -o gffcompare -r chr.gtf stringtie.gff
@@ -253,6 +262,7 @@ process create_matrix {
         tuple val(meta), val(chr), val("gene"), path("expression.gene.hdf"), emit: gene
         tuple val(meta), val(chr), val("transcript"), path("expression.transcript.hdf"), emit: transcript
         tuple val(meta), val(chr), path("stats.json"), emit: stats
+    script:
     """
     workflow-glue create_matrix \
         ${chr} barcodes.tsv features.tsv \
@@ -273,12 +283,12 @@ process process_matrix {
     input:
         tuple val(meta), val(feature), path('inputs/matrix*.hdf')
     output:
-        tuple val(meta), val(feature), path("${feature}_raw_feature_bc_matrix"), emit: raw
-        tuple val(meta), val(feature), path("${feature}_processed_feature_bc_matrix"), emit: processed
-        tuple val(meta), val(feature), path("${feature}.expression.mean-per-cell.tsv"), emit: meancell
+        tuple val(meta), val(feature), path("${meta.alias}.${feature}_raw_feature_bc_matrix"), emit: raw
+        tuple val(meta), val(feature), path("${meta.alias}.${feature}_processed_feature_bc_matrix"), emit: processed
+        tuple val(meta), val(feature), path("${meta.alias}.${feature}_expression_mean_per_cell.tsv"), emit: meancell
         // mito per cell makes sense only for feature=gene for now.
-        tuple val(meta), val(feature), path("gene.expression.mito-per-cell.tsv"), emit: mitocell, optional: true
-        tuple val(meta), val(feature), path("${feature}.expression.umap*.tsv"), emit: umap
+        tuple val(meta), val(feature), path("${meta.alias}.gene_expression_mito_per_cell.tsv"), emit: mitocell, optional: true
+        tuple val(meta), val(feature), path("${meta.alias}.${feature}_expression_umap*.tsv"), emit: umap
     script:
     def mito_prefixes = params.mito_prefix.replaceAll(',', ' ')
     """
@@ -286,11 +296,11 @@ process process_matrix {
     workflow-glue process_matrix \
         inputs/matrix*.hdf \
         --feature ${feature} \
-        --raw ${feature}_raw_feature_bc_matrix \
-        --processed ${feature}_processed_feature_bc_matrix \
-        --per_cell_mito ${feature}.expression.mito-per-cell.tsv \
-        --per_cell_expr ${feature}.expression.mean-per-cell.tsv \
-        --umap_tsv ${feature}.expression.umap.tsv \
+        --raw "${meta.alias}.${feature}_raw_feature_bc_matrix" \
+        --processed "${meta.alias}.${feature}_processed_feature_bc_matrix" \
+        --per_cell_mito "${meta.alias}.${feature}_expression_mito_per_cell.tsv" \
+        --per_cell_expr "${meta.alias}.${feature}_expression_mean_per_cell.tsv" \
+        --umap_tsv "${meta.alias}.${feature}_expression_umap_REPEAT.tsv" \
         --enable_filtering \
         --min_features $params.matrix_min_genes \
         --min_cells $params.matrix_min_cells \
@@ -315,17 +325,17 @@ process merge_transcriptome {
             path('gffs/?.gff')
     output:
         tuple val(meta),
-            path("transcriptome.gff.gz"),
-            path("transcriptome.fa.gz"),
+            path("${meta.alias}.transcriptome.gff.gz"),
+            path("${meta.alias}.transcriptome.fa.gz"),
             emit: merged_annotation
     """
     find fasta/ -name '*.fa' -exec cat {} + \
         | bgzip --threads ${task.cpus} -c  \
-        > "transcriptome.fa.gz"
+        > "${meta.alias}.transcriptome.fa.gz"
     find gffs/ -name '*.gff' -exec cat {} + \
         | grep -v '^#' \
         | bgzip --threads ${task.cpus} -c  \
-        > "transcriptome.gff.gz"
+        > "${meta.alias}.transcriptome.gff.gz"
     """
 }
 
@@ -341,9 +351,9 @@ process combine_final_tag_files {
               path("tags*.tsv")
     output:
         tuple val(meta),
-              path("read_summary.tsv")
+              path("${meta.alias}.read_summary.tsv")
     """
-    awk 'FNR>1 || NR==1' *.tsv > "read_summary.tsv"
+    awk 'FNR>1 || NR==1' *.tsv > "${meta.alias}.read_summary.tsv"
     """
 }
 
@@ -393,13 +403,13 @@ process tag_bam {
     input:
         tuple val(meta), path('align.bam'), path('align.bam.bai'), path('tags/tag_*.tsv')
     output:
-         tuple val(meta), path("tagged.bam"), path('tagged.bam.bai')
+         tuple val(meta), path("${meta.alias}.tagged.bam"), path("${meta.alias}.tagged.bam.bai")
     script:
     """
     workflow-glue tag_bam \
-        align.bam tagged.bam tags \
+        align.bam "${meta.alias}.tagged.bam" tags \
         --threads ${task.cpus}
-    samtools index -@ ${task.cpus} "tagged.bam"
+    samtools index -@ ${task.cpus} "${meta.alias}.tagged.bam"
     """
 }
 
@@ -432,6 +442,12 @@ workflow process_bams {
                 whitelist = it[0][1]
                 barcodes = it[1][1]
                 [meta, whitelist, barcodes]})
+        
+        merge_and_publish_tsv(
+            assign_barcodes.out.summary
+                .concat(generate_whitelist.out.shortlist_summary)
+                .groupTuple(),
+            'bc_assignment_summary.tsv')
 
         // Combine the tag chunks to per chrom chunks and emit [meta, chr, tags]
         chr_tags = cat_tags_by_chrom(assign_barcodes.out.tags.groupTuple())
@@ -534,4 +550,5 @@ workflow process_bams {
             .groupTuple(size:2)
             .map{key, files -> [key, files.flatten()]}
         // per chromosome expression statistics
-        expression_stats = create_matrix.out.stats}
+        expression_stats = create_matrix.out.stats
+}

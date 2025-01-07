@@ -163,16 +163,17 @@ input_reads.fastq   ─── input_directory  ─── input_directory
 | fastq | string | FASTQ files to use in the analysis. | This accepts one of three cases: (i) the path to a single FASTQ file; (ii) the path to a top-level directory containing FASTQ files; (iii) the path to a directory containing one level of sub-directories which in turn contain FASTQ files. In the first and second case, a sample name can be supplied with `--sample`. In the last case, the data is assumed to be multiplexed with the names of the sub-directories as barcodes. In this case, a sample sheet can be provided with `--sample_sheet`. |  |
 | bam | string | BAM or unaligned BAM (uBAM) files to use in the analysis. | This accepts one of three cases: (i) the path to a single BAM file; (ii) the path to a top-level directory containing BAM files; (iii) the path to a directory containing one level of sub-directories which in turn contain BAM files. In the first and second case, a sample name can be supplied with `--sample`. In the last case, the data is assumed to be multiplexed with the names of the sub-directories as barcodes. In this case, a sample sheet can be provided with `--sample_sheet`. |  |
 | ref_genome_dir | string | The path to the 10x reference directory | Human reference data can be downloaded from 10x [here](https://cf.10xgenomics.com/supp/cell-exp/refdata-gex-GRCh38-2020-A.tar.gz). Instructions for preparing reference data can be found [here](https://www.10xgenomics.com/support/software/cell-ranger/tutorials/cr-tutorial-mr#overview) |  |
-| kit | string | The 10x kit and version separated by a colon (eg: 3prime:v3) | 10x kits can be released with different versions, each requiring a specific whitelist that is looked-up by the workflow. If `single_cell_sample_sheet` is not defined, the 10x kit is applied to all samples. This parameter is ignored if `single_cell_sample_sheet` is supplied. | 3prime:v3 |
-| expected_cells | integer | Number of expected cells in the sample. | The number of expected cells. If `single_cell_sample_sheet` is not defined, `expected_cells` is applied to all samples. This parameter is ignored if `single_cell_sample_sheet` is supplied. | 500 |
+| kit | string | The 10x kit and version separated by a colon (eg: 3prime:v3) | 10x kits can be released with different versions, each requiring a specific whitelist that is looked-up by the workflow. If `single_cell_sample_sheet` is not defined, the 10x kit is applied to all samples. This parameter is ignored if `single_cell_sample_sheet` is supplied. |  |
+| expected_cells | integer | Number of expected cells in the sample. | The number of expected cells. If `single_cell_sample_sheet` is not defined, `expected_cells` is applied to all samples. This parameter is ignored if `single_cell_sample_sheet` is supplied. |  |
+| single_cell_sample_sheet | string | An optional CSV file used to assign library metadata per sample. If all samples have the same library metadata, this can be supplied instead by using the `--kit` and `--expected_cells` parameters. | Columns should be: [sample_id, kit, exp_cells]. This must not be confused with the MinKNOW sample_sheet. `sample_id` should correspond to `sample_name` which is defined either in the `sample_sheet`, given by the `sample` parameter (for single sample runs) or if no `sample_sheet` or `sample` is given, is derived from the folder name containing the FASTQ files. |  |
 | full_length_only | boolean | Only process full length reads. | If set to true, only process reads or subreads that are classified as full length (read segments flanked by compatible adapters in the expected orientation). | True |
+| min_read_qual | number | Specify read quality lower limit. | Any reads with a quality lower than this limit will not be included in the analysis. |  |
 
 
 ### Sample Options
 
 | Nextflow parameter name  | Type | Description | Help | Default |
 |--------------------------|------|-------------|------|---------|
-| single_cell_sample_sheet | string | An optional CSV file used to assign library metadata to the different samples. If all samples have the same library metadata, this can be supplied instead by using the parameters (kit, expected cells). | Columns should be: [sample_id, kit, exp_cells]. This must not be confused with the MinKNOW sample_sheet. `sample_id` should correspond to `sample_name` which is defined either in the `sample_sheet`, given by the `sample` parameter (for single sample runs) or if no `sample_sheet` or `sample` is given, is derived from the folder name containing the FASTQ files. |  |
 | sample_sheet | string | A CSV file used to map barcodes to sample aliases. The sample sheet can be provided when the input data is a directory containing sub-directories with FASTQ files. | The sample sheet is a CSV file with, minimally, columns named `barcode` and `alias`. Extra columns are allowed. A `type` column is required for certain workflows and should have the following values; `test_sample`, `positive_control`, `negative_control`, `no_template_control`. |  |
 | sample | string | A single sample name for non-multiplexed data. Permissible if passing a single .fastq(.gz) file or directory of .fastq(.gz) files. |  |  |
 
@@ -217,26 +218,29 @@ Output files may be aggregated including information for all samples or provided
 | Title | File path | Description | Per sample or aggregated |
 |-------|-----------|-------------|--------------------------|
 | workflow report | wf-single-cell-report.html | Report for all samples | aggregated |
-| Results summaries | {{ alias }}/config_stats.json | Results summaries including adapter configuration numbers. | per-sample |
-| Gene expression counts | {{ alias }}/gene_raw_feature_bc_matrix/matrix.mtx.gz | Gene x cell expression sparse matrix values (MEX format). | per-sample |
-| Gene expression barcodes | {{ alias }}/gene_raw_feature_bc_matrix/barcodes.tsv.gz | Barcode column names (MEX format). | per-sample |
-| Gene expression features | {{ alias }}/gene_raw_feature_bc_matrix/features.tsv.gz | Feature row names (MEX format). | per-sample |
-| Transcript expression counts | {{ alias }}/transcript_raw_feature_bc_matrix/matrix.mtx.gz | Transcript x cell expression sparse matrix values (MEX format). | per-sample |
-| Transcript expression MEX barcodes | {{ alias }}/transcript_raw_feature_bc_matrix/barcodes.tsv.gz | Barcode column names (MEX format). | per-sample |
-| Transcript expression MEX features | {{ alias }}/transcript_raw_feature_bc_matrix/features.tsv.gz | Feature row names (MEX format). | per-sample |
-| Processed gene expression counts | {{ alias }}/gene_processed_feature_bc_matrix/matrix.mtx.gz | Filtered and normalized gene x cell expression sparse matrix values (MEX format). | per-sample |
-| Processed gene expression barcodes | {{ alias }}/gene_processed_feature_bc_matrix/barcodes.tsv.gz | Barcode column names (MEX format) for processed matrix. | per-sample |
-| Processed gene expression features | {{ alias }}/gene_processed_feature_bc_matrix/features.tsv.gz | Feature row names (MEX format) for processed matrix. | per-sample |
-| Processed transcript expression counts | {{ alias }}/transcript_processed_feature_bc_matrix/matrix.mtx.gz | Filtered and normalized transcript x cell expression sparse matrix values (MEX format). | per-sample |
-| Processed transcript expression MEX barcodes | {{ alias }}/transcript_processed_feature_bc_matrix/barcodes.tsv.gz | Barcode column names (MEX format) for processed matrix. | per-sample |
-| Processed transcript expression MEX features | {{ alias }}/transcript_processed_feature_bc_matrix/features.tsv.gz | Feature row names (MEX format) for processed matrix. | per-sample |
-| Mitochondrial expression levels | {{ alias }}/gene_expression.mito-per-cell.tsv | Per cell mitochondrial gene expression as percentage total of total gene expression. | per-sample |
-| Read summary | {{ alias }}/read_summary.tsv | Per read assigned barcodes UMIs genes and transcripts. | per-sample |
-| Whitelist | {{ alias }}/whitelist.tsv | The barcodes found in the library that remain after filtering. | per-sample |
-| Alignment output per sample | {{ alias }}/tagged.bam | Genomic alignment output file. | per-sample |
-| Alignment index per sample | {{ alias }}/tagged.bam.bai | Genomic alignment index file. | per-sample |
-| Transcriptome sequence | {{ alias }}/transcriptome.fa.gz | Transcriptome generated by Stringtie during transcript discovery stage | per-sample |
-| Transcriptome annotation | {{ alias }}/transcriptome.gff.gz | Transcriptome annotation generated by Stringtie during transcript discovery stage | per-sample |
+| Results summaries | {{ alias }}/{{ alias }}.config_stats.json | Results summaries including adapter configuration numbers. | per-sample |
+| Gene expression counts | {{ alias }}/{{ alias }}.gene_raw_feature_bc_matrix/matrix.mtx.gz | Gene x cell expression sparse matrix values (MEX format). | per-sample |
+| Gene expression barcodes | {{ alias }}/{{ alias }}.gene_raw_feature_bc_matrix/barcodes.tsv.gz | Barcode column names (MEX format). | per-sample |
+| Gene expression features | {{ alias }}/{{ alias }}.gene_raw_feature_bc_matrix/features.tsv.gz | Feature row names (MEX format). | per-sample |
+| Transcript expression counts | {{ alias }}/{{ alias }}.transcript_raw_feature_bc_matrix/matrix.mtx.gz | Transcript x cell expression sparse matrix values (MEX format). | per-sample |
+| Transcript expression MEX barcodes | {{ alias }}/{{ alias }}.transcript_raw_feature_bc_matrix/barcodes.tsv.gz | Barcode column names (MEX format). | per-sample |
+| Transcript expression MEX features | {{ alias }}/{{ alias }}.transcript_raw_feature_bc_matrix/features.tsv.gz | Feature row names (MEX format). | per-sample |
+| Processed gene expression counts | {{ alias }}/{{ alias }}.gene_processed_feature_bc_matrix/matrix.mtx.gz | Filtered and normalized gene x cell expression sparse matrix values (MEX format). | per-sample |
+| Processed gene expression barcodes | {{ alias }}/{{ alias }}.gene_processed_feature_bc_matrix/barcodes.tsv.gz | Barcode column names (MEX format) for processed matrix. | per-sample |
+| Processed gene expression features | {{ alias }}/{{ alias }}.gene_processed_feature_bc_matrix/features.tsv.gz | Feature row names (MEX format) for processed matrix. | per-sample |
+| Processed transcript expression counts | {{ alias }}/{{ alias }}.transcript_processed_feature_bc_matrix/matrix.mtx.gz | Filtered and normalized transcript x cell expression sparse matrix values (MEX format). | per-sample |
+| Processed transcript expression MEX barcodes | {{ alias }}/{{ alias }}.transcript_processed_feature_bc_matrix/barcodes.tsv.gz | Barcode column names (MEX format) for processed matrix. | per-sample |
+| Processed transcript expression MEX features | {{ alias }}/{{ alias }}.transcript_processed_feature_bc_matrix/features.tsv.gz | Feature row names (MEX format) for processed matrix. | per-sample |
+| Mitochondrial expression levels | {{ alias }}/{{ alias }}.gene_expression_mito_per_cell.tsv | Per cell mitochondrial gene expression as percentage total of total gene expression. | per-sample |
+| Read summary | {{ alias }}/{{ alias }}.read_summary.tsv | Per read assigned barcodes UMIs genes and transcripts. | per-sample |
+| Whitelist | {{ alias }}/{{ alias }}.whitelist.tsv | The barcodes found in the library that remain after filtering. | per-sample |
+| Alignment output per sample | {{ alias }}/{{ alias }}.tagged.bam | Genomic alignment output file. | per-sample |
+| Alignment index per sample | {{ alias }}/{{ alias }}.tagged.bam.bai | Genomic alignment index file. | per-sample |
+| Transcriptome sequence | {{ alias }}/{{ alias }}.transcriptome.fa.gz | Transcriptome generated by Stringtie during transcript discovery stage | per-sample |
+| Transcriptome annotation | {{ alias }}/{{ alias }}.transcriptome.gff.gz | Transcriptome annotation generated by Stringtie during transcript discovery stage | per-sample |
+| Gene expression umap | {{ alias }}/{{ alias }}.gene_expression_umap_*.tsv | UMAP matrix from gene expression. Varying number of files will be present based on number of umap repeats. | per-sample |
+| Transcript expression umap | {{ alias }}/{{ alias }}.transcript_expression_umap_*.tsv | UMAP matrix from transcript expression. Varying number of files will be present based on number of umap repeats. | per-sample |
+| Barcode assignment summary | {{ alias }}/{{ alias }}.bc_assignment_summary.tsv | TSV file with barcode assignment summary statistics. | per-sample |
 
 
 
@@ -493,7 +497,9 @@ When using singularity the following error may occur:
 RuntimeError: cannot cache function 'rdist': no locator available for file '/home/epi2melabs/...'
 ```
 
-If you receive this error we suggest using the following in a `nextflow.config` file to set the cache directory to a location that is writable by the singularity container:
+If you receive this error, you may need to set the numba cache directory to a location that is writable by the singularity 
+container. To do this, add the following contents to a file (`numba.config` for example) and use `-c numba.config` in the workflow command
+to apply it.
 
 ```
 profiles {
@@ -504,6 +510,9 @@ profiles {
             runOptions = '--writable-tmpfs'
         }
     }
+}
+env {
+    NUMBA_CACHE_DIR = "${launchDir}/numba_cache"
 }
 ```
 
