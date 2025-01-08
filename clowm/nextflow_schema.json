@@ -68,13 +68,9 @@
                     "default": true
                 }
             },
-            "allOf": [
-                {
                     "required": [
                         "ref_genome_dir"
-                    ]
-                },
-                {
+                    ],
                     "oneOf": [
                         {
                             "required": [
@@ -87,8 +83,6 @@
                             ]
                         }
                     ]
-                }
-            ]
         },
         "samples": {
             "title": "Sample Options",
